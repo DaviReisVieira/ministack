@@ -26,5 +26,26 @@ export async function fetchResourceDetail(service: string, type: string, id: str
   return res.json()
 }
 
+export async function fetchS3Buckets() {
+  const res = await fetch(`${API_BASE}/s3/buckets`)
+  return res.json()
+}
+
+export async function fetchS3Bucket(bucket: string) {
+  const res = await fetch(`${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}`)
+  return res.json()
+}
+
+export async function fetchS3Objects(bucket: string, prefix = '', delimiter = '/') {
+  const params = new URLSearchParams({ prefix, delimiter })
+  const res = await fetch(`${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects?${params}`)
+  return res.json()
+}
+
+export async function fetchS3Object(bucket: string, key: string) {
+  const res = await fetch(`${API_BASE}/s3/buckets/${encodeURIComponent(bucket)}/objects/${key}`)
+  return res.json()
+}
+
 export const SSE_REQUESTS_URL = `${API_BASE}/requests/stream`
 export const SSE_LOGS_URL = `${API_BASE}/logs/stream`

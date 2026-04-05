@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { EmptyState } from '@/components/EmptyState'
 import { JsonViewer } from '@/components/JsonViewer'
+import { SERVICE_VIEWS } from '@/components/service-views'
 import { getServiceIcon } from '@/lib/service-icons'
 import { FolderOpen } from 'lucide-react'
 
@@ -92,7 +93,12 @@ export default function ResourceBrowser() {
           />
         )}
 
-        {service && loadingResources && (
+        {service && SERVICE_VIEWS[service] && (() => {
+          const CustomBrowser = SERVICE_VIEWS[service]
+          return <CustomBrowser />
+        })()}
+
+        {service && !SERVICE_VIEWS[service] && loadingResources && (
           <div className="space-y-4">
             <Skeleton className="h-8 w-48" />
             <Skeleton className="h-32 w-full" />
@@ -100,7 +106,7 @@ export default function ResourceBrowser() {
           </div>
         )}
 
-        {service && resources && (
+        {service && !SERVICE_VIEWS[service] && resources && (
           <div className="space-y-6">
             <div className="flex items-center gap-3">
               {(() => { const Icon = getServiceIcon(service); return <Icon className="h-5 w-5 text-muted-foreground" /> })()}
