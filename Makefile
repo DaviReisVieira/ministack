@@ -16,10 +16,12 @@ build:
 run: build
 	docker run -d --name $(CONTAINER_NAME) -p $(PORT):4566 \
 		-e LOG_LEVEL=INFO \
+		-e MINISTACK_UI=1 \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		$(IMAGE_NAME)
 	@echo "MiniStack running on http://localhost:$(PORT)"
 	@echo "Health: http://localhost:$(PORT)/_ministack/health"
+	@echo "UI:     http://localhost:$(PORT)/_ministack/ui/"
 
 run-compose:
 	docker compose up -d --build

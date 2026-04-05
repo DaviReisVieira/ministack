@@ -87,6 +87,32 @@ curl http://localhost:4566/health
 
 ---
 
+## UI Dashboard
+
+MiniStack includes an optional web dashboard for browsing resources, inspecting requests, and viewing logs in real time. Enable it with `MINISTACK_UI=1`:
+
+```bash
+# PyPI
+MINISTACK_UI=1 ministack
+
+# Docker
+docker run -p 4566:4566 -e MINISTACK_UI=1 nahuelnucera/ministack
+
+# docker-compose (already enabled in docker-compose.yml)
+docker compose up -d
+```
+
+Open `http://localhost:4566/_ministack/ui/` to access:
+
+- **Dashboard** — service grid with status, resource counts, and recent requests
+- **Resource Browser** — per-service resource inspection (S3 has a dedicated file browser with search, pagination, and download)
+- **Log Viewer** — real-time log stream with level/text filtering
+- **Request Inspector** — live request feed with service/status filters and timing stats
+
+When `MINISTACK_UI` is off (default), zero UI code is loaded — no overhead on requests.
+
+---
+
 ## Using with AWS CLI
 
 ```bash
@@ -485,6 +511,7 @@ ecs.stop_task(cluster="dev", task=task_arn)
 | `STATE_DIR` | `/tmp/ministack-state` | Directory for persisted state files |
 | `LAMBDA_EXECUTOR` | `local` | Lambda execution mode: `local` (subprocess) or `docker` (container) |
 | `SFN_MOCK_CONFIG` | _(unset)_ | Path to JSON file for Step Functions mock testing; compatible with AWS SFN Local format. Also accepts `LOCALSTACK_SFN_MOCK_CONFIG` |
+| `MINISTACK_UI` | `0` | Set `1` to enable the web UI dashboard at `/_ministack/ui/` |
 | `ATHENA_ENGINE` | `auto` | SQL engine for Athena: `auto`, `duckdb`, `mock` |
 
 ### Athena SQL Engines
