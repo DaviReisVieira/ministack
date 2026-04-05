@@ -18,6 +18,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from urllib.parse import parse_qs, urlparse
 
@@ -47,6 +48,7 @@ from ministack.services import (
     appsync,
     athena,
     cloudformation,
+    cloudfront,
     cloudwatch,
     cloudwatch_logs,
     cognito,
@@ -60,6 +62,7 @@ from ministack.services import (
     eventbridge,
     firehose,
     glue,
+    iam_sts,
     kinesis,
     kms,
     lambda_svc,
@@ -74,10 +77,12 @@ from ministack.services import (
     ssm,
     stepfunctions,
     waf,
-    cloudfront,
 )
-from ministack.services import iam_sts
 from ministack.services.iam_sts import handle_iam_request, handle_sts_request
+from ministack.ui import api as ui_api
+from ministack.ui import interceptor as ui_interceptor
+from ministack.ui import static as ui_static
+from ministack.ui.log_handler import ui_log_handler
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -86,6 +91,9 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("ministack")
+
+# Attach UI log handler to root logger for dashboard log viewer
+logging.getLogger().addHandler(ui_log_handler)
 
 SERVICE_HANDLERS = {
     "s3": s3.handle_request,
@@ -174,6 +182,7 @@ BANNER = r"""
  |_|  |_|_|_| |_|_|____/ \__\__,_|\___|_|\_\
 
  Local AWS Service Emulator — Port {port}
+ Dashboard: http://localhost:{port}/_ministack/ui/
  Services: S3, SQS, SNS, DynamoDB, Lambda, IAM, STS, SecretsManager, CloudWatch Logs,
           SSM, EventBridge, Kinesis, CloudWatch, SES, SES v2, ACM, WAF v2, Step Functions,
           ECS, RDS, ElastiCache, Glue, Athena, API Gateway, Firehose, Route53,
@@ -244,6 +253,15 @@ async def app(scope, receive, send):
                 headers.pop("content-encoding", None)
 
     request_id = str(uuid.uuid4())
+
+    # UI Dashboard: static files and API
+    if path.startswith("/_ministack/ui") and (path == "/_ministack/ui" or path.startswith("/_ministack/ui/")):
+        await ui_static.serve(path, send)
+        return
+
+    if path.startswith("/_ministack/api/"):
+        await ui_api.handle(method, path, query_params, receive, send)
+        return
 
     # Lambda layer content download: /_ministack/lambda-layers/{name}/{ver}/content
     if path.startswith("/_ministack/lambda-layers/") and method == "GET":
@@ -502,6 +520,7 @@ async def app(scope, receive, send):
 
     service = detect_service(method, path, headers, routing_params)
     region = extract_region(headers)
+    action = ui_interceptor.extract_action(headers, query_params, path)
 
     logger.debug("%s %s -> service=%s region=%s", method, path, service, region)
 
@@ -511,13 +530,28 @@ async def app(scope, receive, send):
             json.dumps({"error": f"Unsupported service: {service}"}).encode())
         return
 
+    t0 = time.monotonic()
     try:
         status, resp_headers, resp_body = await handler(method, path, headers, body, query_params)
     except Exception as e:
         logger.exception("Error handling %s request: %s", service, e)
+        duration_ms = (time.monotonic() - t0) * 1000
+        ui_interceptor.record_request(
+            method=method, path=path, service=service, action=action,
+            status=500, duration_ms=duration_ms,
+            request_size=len(body), response_size=0,
+        )
         await _send_response(send, 500, {"Content-Type": "application/json"},
             json.dumps({"__type": "InternalError", "message": str(e)}).encode())
         return
+
+    duration_ms = (time.monotonic() - t0) * 1000
+    resp_body_bytes = resp_body if isinstance(resp_body, bytes) else resp_body.encode("utf-8")
+    ui_interceptor.record_request(
+        method=method, path=path, service=service, action=action,
+        status=status, duration_ms=duration_ms,
+        request_size=len(body), response_size=len(resp_body_bytes),
+    )
 
     resp_headers.update({
         "Access-Control-Allow-Origin": "*",
@@ -761,7 +795,7 @@ def main():
             f.write(str(proc.pid))
         print(f"MiniStack started in background (PID {proc.pid}) on port {port}.")
         print(f"  Logs: {log_file}")
-        print(f"  Stop: ministack --stop")
+        print("  Stop: ministack --stop")
         return
 
     # Foreground — write PID file and clean up on exit
