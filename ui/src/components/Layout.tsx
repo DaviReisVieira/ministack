@@ -30,7 +30,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
                     isActive
-                      ? 'bg-accent text-accent-foreground border-r-2 border-primary'
+                      ? 'bg-primary/10 text-primary border-r-2 border-primary font-medium'
                       : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
                   }`
                 }
