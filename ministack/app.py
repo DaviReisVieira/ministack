@@ -79,10 +79,14 @@ from ministack.services import (
     waf,
 )
 from ministack.services.iam_sts import handle_iam_request, handle_sts_request
-from ministack.ui import api as ui_api
-from ministack.ui import interceptor as ui_interceptor
-from ministack.ui import static as ui_static
-from ministack.ui.log_handler import ui_log_handler
+
+MINISTACK_UI = os.environ.get("MINISTACK_UI", "0").lower() in ("1", "true", "yes")
+
+if MINISTACK_UI:
+    from ministack.ui import api as ui_api
+    from ministack.ui import interceptor as ui_interceptor
+    from ministack.ui import static as ui_static
+    from ministack.ui.log_handler import ui_log_handler
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -93,7 +97,8 @@ logging.basicConfig(
 logger = logging.getLogger("ministack")
 
 # Attach UI log handler to root logger for dashboard log viewer
-logging.getLogger().addHandler(ui_log_handler)
+if MINISTACK_UI:
+    logging.getLogger().addHandler(ui_log_handler)
 
 SERVICE_HANDLERS = {
     "s3": s3.handle_request,
@@ -254,14 +259,15 @@ async def app(scope, receive, send):
 
     request_id = str(uuid.uuid4())
 
-    # UI Dashboard: static files and API
-    if path.startswith("/_ministack/ui") and (path == "/_ministack/ui" or path.startswith("/_ministack/ui/")):
-        await ui_static.serve(path, send)
-        return
+    # UI Dashboard: static files and API (opt-in via MINISTACK_UI=1)
+    if MINISTACK_UI:
+        if path.startswith("/_ministack/ui") and (path == "/_ministack/ui" or path.startswith("/_ministack/ui/")):
+            await ui_static.serve(path, send)
+            return
 
-    if path.startswith("/_ministack/api/"):
-        await ui_api.handle(method, path, query_params, receive, send)
-        return
+        if path.startswith("/_ministack/api/"):
+            await ui_api.handle(method, path, query_params, receive, send)
+            return
 
     # Lambda layer content download: /_ministack/lambda-layers/{name}/{ver}/content
     if path.startswith("/_ministack/lambda-layers/") and method == "GET":
@@ -520,7 +526,7 @@ async def app(scope, receive, send):
 
     service = detect_service(method, path, headers, routing_params)
     region = extract_region(headers)
-    action = ui_interceptor.extract_action(headers, query_params, path)
+    action = ui_interceptor.extract_action(headers, query_params, path) if MINISTACK_UI else ""
 
     logger.debug("%s %s -> service=%s region=%s", method, path, service, region)
 
@@ -530,28 +536,30 @@ async def app(scope, receive, send):
             json.dumps({"error": f"Unsupported service: {service}"}).encode())
         return
 
-    t0 = time.monotonic()
+    t0 = time.monotonic() if MINISTACK_UI else 0
     try:
         status, resp_headers, resp_body = await handler(method, path, headers, body, query_params)
     except Exception as e:
         logger.exception("Error handling %s request: %s", service, e)
-        duration_ms = (time.monotonic() - t0) * 1000
-        ui_interceptor.record_request(
-            method=method, path=path, service=service, action=action,
-            status=500, duration_ms=duration_ms,
-            request_size=len(body), response_size=0,
-        )
+        if MINISTACK_UI:
+            duration_ms = (time.monotonic() - t0) * 1000
+            ui_interceptor.record_request(
+                method=method, path=path, service=service, action=action,
+                status=500, duration_ms=duration_ms,
+                request_size=len(body), response_size=0,
+            )
         await _send_response(send, 500, {"Content-Type": "application/json"},
             json.dumps({"__type": "InternalError", "message": str(e)}).encode())
         return
 
-    duration_ms = (time.monotonic() - t0) * 1000
     resp_body_bytes = resp_body if isinstance(resp_body, bytes) else resp_body.encode("utf-8")
-    ui_interceptor.record_request(
-        method=method, path=path, service=service, action=action,
-        status=status, duration_ms=duration_ms,
-        request_size=len(body), response_size=len(resp_body_bytes),
-    )
+    if MINISTACK_UI:
+        duration_ms = (time.monotonic() - t0) * 1000
+        ui_interceptor.record_request(
+            method=method, path=path, service=service, action=action,
+            status=status, duration_ms=duration_ms,
+            request_size=len(body), response_size=len(resp_body_bytes),
+        )
 
     resp_headers.update({
         "Access-Control-Allow-Origin": "*",
