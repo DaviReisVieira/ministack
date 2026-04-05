@@ -55,6 +55,9 @@ ministack = "ministack.app:main"
 [tool.setuptools.packages.find]
 include = ["ministack*"]
 
+[tool.setuptools.package-data]
+"ministack.ui" = ["dist/**/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

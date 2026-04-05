@@ -117,6 +117,15 @@ print('Lambda zip created')"
 	@echo ""
 	@echo "=== All tests passed ==="
 
+ui-install:
+	cd ui && npm install
+
+ui-build: ui-install
+	cd ui && npm run build
+
+ui-dev:
+	cd ui && npm run dev
+
 clean: stop
 	docker rmi $(IMAGE_NAME) 2>/dev/null || true
 

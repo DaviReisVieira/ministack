@@ -1,4 +1,4 @@
 uvicorn[standard]==0.30.6
-httptools==0.6.1
+httptools==0.6.4
 docker>=7.0.0
 cbor2>=5.4.0

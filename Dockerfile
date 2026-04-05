@@ -1,7 +1,16 @@
+# Stage 1: Build UI dashboard
+FROM node:20-alpine AS ui-build
+WORKDIR /app/ui
+COPY ui/package*.json ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run build
+
+# Stage 2: Python application
 FROM python:3.12-alpine
 
 LABEL maintainer="MiniStack" \
-      description="Local AWS Service Emulator — drop-in LocalStack replacement"
+    description="Local AWS Service Emulator — drop-in LocalStack replacement"
 
 # Upgrade base packages to pick up latest security patches.
 RUN apk upgrade --no-cache && apk add --no-cache nodejs && rm -f /usr/bin/wget /bin/wget
@@ -11,14 +20,15 @@ WORKDIR /opt/ministack
 # Install all Python dependencies.
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir \
-        uvicorn==0.30.6 \
-        "cbor2>=5.4.0" \
-        "defusedxml>=0.7" \
-        "docker>=7.0.0" \
-        "pyyaml>=6.0" \
-        "cryptography>=41.0"
+    uvicorn==0.30.6 \
+    "cbor2>=5.4.0" \
+    "defusedxml>=0.7" \
+    "docker>=7.0.0" \
+    "pyyaml>=6.0" \
+    "cryptography>=41.0"
 
 COPY ministack/ ministack/
+COPY --from=ui-build /app/ministack/ui/dist ministack/ui/dist
 
 RUN addgroup -S ministack && adduser -S ministack -G ministack
 RUN mkdir -p /tmp/ministack-data/s3 && chown -R ministack:ministack /tmp/ministack-data

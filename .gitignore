@@ -14,8 +14,8 @@ var/
 sdist/
 develop-eggs/
 .installed.cfg
-lib/
-lib64/
+/lib/
+/lib64/
 .eggs/
 *.so
 
@@ -50,3 +50,7 @@ data/
 
 # Logs
 *.log
+
+# UI Dashboard (built output)
+ministack/ui/dist/
+ui/node_modules/
