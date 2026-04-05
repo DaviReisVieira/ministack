@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchS3Buckets, fetchS3Objects, fetchS3Object, getS3DownloadUrl } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/EmptyState'
@@ -21,6 +22,7 @@ import {
   FileCode,
   FileArchive,
   ChevronRight,
+  ChevronLeft,
   ArrowLeft,
   Clock,
   Globe,
@@ -30,6 +32,8 @@ import {
   Download,
   Search,
 } from 'lucide-react'
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
 
 interface S3Bucket {
   name: string
@@ -100,6 +104,65 @@ function getFileIcon(contentType: string, name: string) {
   return File
 }
 
+function PaginationBar({
+  page, totalPages, totalItems, pageSize, onPageChange, onPageSizeChange,
+}: {
+  page: number
+  totalPages: number
+  totalItems: number
+  pageSize: number
+  onPageChange: (page: number) => void
+  onPageSizeChange: (size: number) => void
+}) {
+  const start = page * pageSize + 1
+  const end = Math.min((page + 1) * pageSize, totalItems)
+
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>{start}–{end} of {totalItems}</span>
+        <Separator orientation="vertical" className="h-4" />
+        <span>Rows:</span>
+        <Select value={String(pageSize)} onValueChange={(v) => onPageSizeChange(Number(v))}>
+          <SelectTrigger className="h-7 w-[70px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <SelectItem key={size} value={String(size)} className="text-xs">{size}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          disabled={page === 0}
+          onClick={() => onPageChange(page - 1)}
+          aria-label="Previous page"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-xs text-muted-foreground px-2">
+          {page + 1} / {totalPages}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          disabled={page >= totalPages - 1}
+          onClick={() => onPageChange(page + 1)}
+          aria-label="Next page"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function S3Browser() {
   const bucketsFetcher = useCallback(() => fetchS3Buckets(), [])
   const { data: bucketsData, loading: bucketsLoading } = useFetch<{ buckets: S3Bucket[] }>(bucketsFetcher, 10000)
@@ -111,6 +174,9 @@ export function S3Browser() {
   const [objectDetail, setObjectDetail] = useState<S3ObjectDetail | null>(null)
   const [bucketSearch, setBucketSearch] = useState('')
   const [fileSearch, setFileSearch] = useState('')
+  const [bucketPage, setBucketPage] = useState(0)
+  const [filePage, setFilePage] = useState(0)
+  const [pageSize, setPageSize] = useState(25)
 
   useEffect(() => {
     if (!selectedBucket) {
@@ -136,6 +202,7 @@ export function S3Browser() {
   const navigateToFolder = (folderPrefix: string) => {
     setPrefix(folderPrefix)
     setFileSearch('')
+    setFilePage(0)
   }
 
   const navigateUp = () => {
@@ -143,6 +210,7 @@ export function S3Browser() {
     parts.pop()
     setPrefix(parts.length > 0 ? parts.join('/') + '/' : '')
     setFileSearch('')
+    setFilePage(0)
   }
 
   const breadcrumbs = prefix ? prefix.replace(/\/$/, '').split('/') : []
@@ -158,6 +226,26 @@ export function S3Browser() {
   const filteredFiles = fileSearch && objectsData
     ? objectsData.files.filter((f) => f.name.toLowerCase().includes(fileSearch.toLowerCase()))
     : objectsData?.files ?? []
+
+  // Paginate buckets
+  const bucketTotalPages = Math.max(1, Math.ceil(filteredBuckets.length / pageSize))
+  const paginatedBuckets = useMemo(
+    () => filteredBuckets.slice(bucketPage * pageSize, (bucketPage + 1) * pageSize),
+    [filteredBuckets, bucketPage, pageSize],
+  )
+
+  // Paginate files — combine folders + files into a single list for pagination
+  const allItems = useMemo(() => {
+    const items: ({ type: 'folder'; folder: string } | { type: 'file'; file: S3File })[] = []
+    for (const f of filteredFolders) items.push({ type: 'folder', folder: f })
+    for (const f of filteredFiles) items.push({ type: 'file', file: f })
+    return items
+  }, [filteredFolders, filteredFiles])
+  const fileTotalPages = Math.max(1, Math.ceil(allItems.length / pageSize))
+  const paginatedItems = useMemo(
+    () => allItems.slice(filePage * pageSize, (filePage + 1) * pageSize),
+    [allItems, filePage, pageSize],
+  )
 
   // Bucket list view
   if (!selectedBucket) {
@@ -190,15 +278,17 @@ export function S3Browser() {
             <Badge variant="secondary">{buckets.length}</Badge>
           </div>
           {buckets.length > 0 && (
-            <div className="relative w-64">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Search buckets..."
-                value={bucketSearch}
-                onChange={(e) => setBucketSearch(e.target.value)}
-                className="pl-8 h-8 text-sm"
-                aria-label="Search buckets"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative w-56">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search buckets..."
+                  value={bucketSearch}
+                  onChange={(e) => { setBucketSearch(e.target.value); setBucketPage(0) }}
+                  className="pl-8 h-8 text-sm"
+                  aria-label="Search buckets"
+                />
+              </div>
             </div>
           )}
         </div>
@@ -210,8 +300,9 @@ export function S3Browser() {
             description={`No buckets match "${bucketSearch}".`}
           />
         ) : (
+        <>
         <div className="grid gap-3">
-          {filteredBuckets.map((bkt) => (
+          {paginatedBuckets.map((bkt) => (
             <Card
               key={bkt.name}
               className="cursor-pointer hover:bg-accent/50 transition-colors"
@@ -271,6 +362,17 @@ export function S3Browser() {
             </Card>
           ))}
         </div>
+        {filteredBuckets.length > pageSize && (
+          <PaginationBar
+            page={bucketPage}
+            totalPages={bucketTotalPages}
+            totalItems={filteredBuckets.length}
+            pageSize={pageSize}
+            onPageChange={setBucketPage}
+            onPageSizeChange={(size) => { setPageSize(size); setBucketPage(0) }}
+          />
+        )}
+        </>
         )}
       </div>
     )
@@ -325,7 +427,7 @@ export function S3Browser() {
                 <Input
                   placeholder="Search files..."
                   value={fileSearch}
-                  onChange={(e) => setFileSearch(e.target.value)}
+                  onChange={(e) => { setFileSearch(e.target.value); setFilePage(0) }}
                   className="pl-8 h-8 text-sm"
                   aria-label="Search files and folders"
                 />
@@ -342,13 +444,14 @@ export function S3Browser() {
             </div>
           ) : objectsData && (objectsData.folders.length > 0 || objectsData.files.length > 0) ? (
             <>
-            {filteredFolders.length === 0 && filteredFiles.length === 0 && fileSearch ? (
+            {allItems.length === 0 && fileSearch ? (
               <EmptyState
                 icon={Search}
                 title="No matching files"
                 description={`No files or folders match "${fileSearch}".`}
               />
             ) : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -361,7 +464,7 @@ export function S3Browser() {
               </TableHeader>
               <TableBody>
                 {/* Back navigation */}
-                {prefix && !fileSearch && (
+                {prefix && !fileSearch && filePage === 0 && (
                   <TableRow className="cursor-pointer hover:bg-accent/50" onClick={navigateUp}>
                     <TableCell className="text-xs" colSpan={5}>
                       <div className="flex items-center gap-2 text-muted-foreground">
@@ -372,31 +475,29 @@ export function S3Browser() {
                   </TableRow>
                 )}
 
-                {/* Folders */}
-                {filteredFolders.map((folder) => {
-                  const folderName = folder.slice(prefix.length).replace(/\/$/, '')
-                  return (
-                    <TableRow
-                      key={folder}
-                      className="cursor-pointer hover:bg-accent/50"
-                      onClick={() => navigateToFolder(folder)}
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Folder className="h-4 w-4 text-yellow-500" />
-                          <span className="text-sm font-medium">{folderName}/</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">Folder</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">—</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">—</TableCell>
-                      <TableCell />
-                    </TableRow>
-                  )
-                })}
-
-                {/* Files */}
-                {filteredFiles.map((file) => {
+                {paginatedItems.map((item) => {
+                  if (item.type === 'folder') {
+                    const folderName = item.folder.slice(prefix.length).replace(/\/$/, '')
+                    return (
+                      <TableRow
+                        key={item.folder}
+                        className="cursor-pointer hover:bg-accent/50"
+                        onClick={() => navigateToFolder(item.folder)}
+                      >
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Folder className="h-4 w-4 text-yellow-500" />
+                            <span className="text-sm font-medium">{folderName}/</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">Folder</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">—</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">—</TableCell>
+                        <TableCell />
+                      </TableRow>
+                    )
+                  }
+                  const file = item.file
                   const Icon = getFileIcon(file.content_type, file.name)
                   return (
                     <TableRow
@@ -434,6 +535,19 @@ export function S3Browser() {
                 })}
               </TableBody>
             </Table>
+            {allItems.length > pageSize && (
+              <div className="border-t">
+                <PaginationBar
+                  page={filePage}
+                  totalPages={fileTotalPages}
+                  totalItems={allItems.length}
+                  pageSize={pageSize}
+                  onPageChange={setFilePage}
+                  onPageSizeChange={(size) => { setPageSize(size); setFilePage(0) }}
+                />
+              </div>
+            )}
+            </>
             )}
             </>
           ) : (
