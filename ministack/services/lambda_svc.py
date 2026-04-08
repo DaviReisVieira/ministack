@@ -985,6 +985,9 @@ def _execute_function_docker(func: dict, event: dict) -> dict:
     Mirrors the subprocess executor's interface: returns
     ``{"body": ..., "log": ..., "error": ...}``.
     """
+    config = func.get("config") or func
+    runtime = config.get("Runtime", "python3.9")
+
     if not _docker_available:
         
         if runtime.startswith("python") or runtime.startswith("nodejs"):
@@ -994,13 +997,11 @@ def _execute_function_docker(func: dict, event: dict) -> dict:
         logger.warning("docker SDK unavailable - falling back to local subprocess executor")
         return _execute_function_local(func, event)
 
-    config = func.get("config") or func
     code_zip = func.get("code_zip")
     if not code_zip:
         return {"body": {"statusCode": 200, "body": "Mock response - no code deployed"}}
 
     handler = config["Handler"]
-    runtime = config["Runtime"]
     timeout = config.get("Timeout", 3)
     env_vars = config.get("Environment", {}).get("Variables", {})
 
