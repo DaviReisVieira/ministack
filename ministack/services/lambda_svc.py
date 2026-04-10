@@ -1149,11 +1149,18 @@ def _execute_function_docker(func: dict, event: dict) -> dict:
                         if container.status != "running":
                             break
                         try:
-                            ports = container.ports.get("8080/tcp") or []
-                            if not ports:
-                                continue
-                            host_port = ports[0]["HostPort"]
-                            rie_url = f"http://127.0.0.1:{host_port}/2015-03-31/functions/function/invocations"
+                            if LAMBDA_DOCKER_NETWORK:
+                                networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+                                container_ip = networks.get(LAMBDA_DOCKER_NETWORK, {}).get("IPAddress", "")
+                                if container_ip:
+                                    rie_url = f"http://{container_ip}:8080/2015-03-31/functions/function/invocations"
+                                else:
+                                    continue
+                            else:
+                                ports = container.ports.get("8080/tcp") or []
+                                if not ports:
+                                    continue
+                                rie_url = f"http://127.0.0.1:{ports[0]['HostPort']}/2015-03-31/functions/function/invocations"
                             req = urllib.request.Request(rie_url, data=json.dumps(event).encode(),
                                                         headers={"Content-Type": "application/json"})
                             resp = urllib.request.urlopen(req, timeout=timeout)
@@ -1374,11 +1381,18 @@ def _execute_function_image(func: dict, event: dict) -> dict:
             if container.status != "running":
                 break
             try:
-                ports = container.ports.get("8080/tcp") or []
-                if not ports:
-                    continue
-                host_port = ports[0]["HostPort"]
-                rie_url = f"http://127.0.0.1:{host_port}/2015-03-31/functions/function/invocations"
+                if LAMBDA_DOCKER_NETWORK:
+                    networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+                    container_ip = networks.get(LAMBDA_DOCKER_NETWORK, {}).get("IPAddress", "")
+                    if container_ip:
+                        rie_url = f"http://{container_ip}:8080/2015-03-31/functions/function/invocations"
+                    else:
+                        continue
+                else:
+                    ports = container.ports.get("8080/tcp") or []
+                    if not ports:
+                        continue
+                    rie_url = f"http://127.0.0.1:{ports[0]['HostPort']}/2015-03-31/functions/function/invocations"
                 req = urllib.request.Request(rie_url, data=json.dumps(event).encode(),
                                             headers={"Content-Type": "application/json"})
                 resp = urllib.request.urlopen(req, timeout=timeout)
