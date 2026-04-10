@@ -682,7 +682,7 @@ def _create_function(data: dict):
         config["ImageUri"] = image_uri
         config["PackageType"] = "Image"
         if "ImageConfig" in data:
-            config["ImageConfig"] = data["ImageConfig"]
+            config["ImageConfigResponse"] = {"ImageConfig": data["ImageConfig"]}
 
     _functions[name] = {
         "config": config,
@@ -871,10 +871,11 @@ def _update_config(name: str, data: dict):
         "VpcConfig",
         "Architectures",
         "FileSystemConfigs",
-        "ImageConfig",
     ):
         if key in data:
             config[key] = data[key]
+    if "ImageConfig" in data:
+        config["ImageConfigResponse"] = {"ImageConfig": data["ImageConfig"]}
     config["LastModified"] = _now_iso()
     config["LastUpdateStatus"] = "Successful"
     config["RevisionId"] = new_uuid()
