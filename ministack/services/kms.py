@@ -1496,6 +1496,10 @@ _NOT_FOR_ASYMMETRIC = {
     "GenerateDataKey", "GenerateDataKeyWithoutPlaintext",
     "GenerateDataKeyPair", "GenerateDataKeyPairWithoutPlaintext",
 }
+# HMAC keys support only GenerateMac and VerifyMac as cryptographic
+# operations (HMAC keys guide); DescribeKey, CreateGrant and RetireGrant apply
+# to every key type (Grants guide).
+_HMAC_GRANT_OPERATIONS = {"GenerateMac", "VerifyMac", "DescribeKey", "CreateGrant", "RetireGrant"}
 _GRANTS_DEFAULT_LIMIT = 50
 _GRANTS_MAX_LIMIT = 100
 
@@ -1518,7 +1522,9 @@ def _grant_operation_error(rec, operations):
     unknown = sorted(set(operations) - _GRANT_OPERATIONS)
     if unknown:
         return f"{', '.join(unknown)} is not a valid grant operation."
-    if rec.get("KeySpec", "SYMMETRIC_DEFAULT") == "SYMMETRIC_DEFAULT":
+    if _is_hmac_key(rec):
+        blocked = sorted(set(operations) - _HMAC_GRANT_OPERATIONS)
+    elif rec.get("KeySpec", "SYMMETRIC_DEFAULT") == "SYMMETRIC_DEFAULT":
         blocked = sorted(set(operations) & _NOT_FOR_SYMMETRIC)
     elif _is_asymmetric(rec):
         blocked = sorted(set(operations) & _NOT_FOR_ASYMMETRIC)
@@ -1546,6 +1552,13 @@ def _create_grant(data):
     state_error = _check_key_state(rec)
     if state_error:
         return state_error
+    if rec["KeyState"] == "PendingReplicaDeletion":
+        # Key states table: CreateGrant fails in this state too.
+        return error_response_json(
+            "KMSInvalidStateException",
+            f"{rec['Arn']} is pending replica deletion.",
+            400,
+        )
     grantee = data.get("GranteePrincipal")
     if not grantee:
         return error_response_json("ValidationException", "GranteePrincipal is required.", 400)

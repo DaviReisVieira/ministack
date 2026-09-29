@@ -2675,3 +2675,30 @@ def test_kms_grants_survive_persistence(monkeypatch, tmp_path):
         _kms.reset()
         set_request_account_id(original_account)
         set_request_region(original_region)
+
+
+def test_kms_create_grant_on_hmac_key_allows_only_mac_operations(kms_client):
+    hmac_key = _new_grant_key(kms_client, KeySpec="HMAC_256", KeyUsage="GENERATE_VERIFY_MAC")
+    for operations in (["Encrypt"], ["Sign"], ["GenerateDataKey"], ["GetPublicKey"], ["GenerateMac", "Decrypt"]):
+        with pytest.raises(ClientError) as exc:
+            kms_client.create_grant(KeyId=hmac_key["KeyId"], GranteePrincipal="arn:aws:iam::000000000000:role/h", Operations=operations)
+        assert exc.value.response["Error"]["Code"] == "ValidationException"
+    assert kms_client.list_grants(KeyId=hmac_key["KeyId"])["Grants"] == []
+
+    allowed = ["GenerateMac", "VerifyMac", "DescribeKey", "CreateGrant", "RetireGrant"]
+    kms_client.create_grant(KeyId=hmac_key["KeyId"], GranteePrincipal="arn:aws:iam::000000000000:role/h", Operations=allowed)
+    assert kms_client.list_grants(KeyId=hmac_key["KeyId"])["Grants"][0]["Operations"] == allowed
+
+
+def test_kms_create_grant_rejects_primary_pending_replica_deletion():
+    east, west = _regional_kms("us-east-1"), _regional_kms("us-west-2")
+    key_id = east.create_key(MultiRegion=True)["KeyMetadata"]["KeyId"]
+    east.replicate_key(KeyId=key_id, ReplicaRegion="us-west-2")
+    try:
+        assert east.schedule_key_deletion(KeyId=key_id, PendingWindowInDays=7)["KeyState"] == "PendingReplicaDeletion"
+        with pytest.raises(ClientError) as exc:
+            east.create_grant(KeyId=key_id, GranteePrincipal="arn:aws:iam::000000000000:role/m", Operations=["Encrypt"])
+        assert exc.value.response["Error"]["Code"] == "KMSInvalidStateException"
+        assert east.list_grants(KeyId=key_id)["Grants"] == []
+    finally:
+        west.schedule_key_deletion(KeyId=key_id, PendingWindowInDays=7)
