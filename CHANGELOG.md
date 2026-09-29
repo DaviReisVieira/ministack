@@ -5,6 +5,12 @@ All notable changes to MiniStack will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **KMS — grants** — `CreateGrant`, `RevokeGrant` and `RetireGrant`, and `ListGrants` returns the grants they create instead of always an empty list. `CreateGrant` returns a `GrantId` and a `GrantToken`, follows the key state (`DisabledException` for a disabled key, `KMSInvalidStateException` pending deletion or import), rejects operations the key cannot perform (`Sign` / `Verify` / `GenerateMac` / `VerifyMac` on a symmetric encryption key, data key operations on an asymmetric key) with `ValidationException`, and with a `Name` a retry with identical parameters returns the original `GrantId` with a new token. `ListGrants` filters by `GrantId` and `GranteePrincipal` and pages with `Limit` (1 to 100, default 50) and `Marker`. `RetireGrant` takes a `GrantToken`, or a `KeyId` and `GrantId`. All three honour `DryRun`, and grants persist with the key. Grants are recorded but not evaluated when authorizing other calls, as with key policies. Contributed by @DaviReisVieira.
+
 ## [1.5.18] — 2026-09-28
 
 ### Added
